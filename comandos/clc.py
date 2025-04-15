@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from datetime import datetime, timedelta
 
 class Limpar(commands.Cog):
     def __init__(self, bot):
@@ -9,53 +8,74 @@ class Limpar(commands.Cog):
     @commands.command(
         name="clc",
         aliases=["clearchat"],
-        help="Limpa mensagens. Uso: `!clc <num> <h|d>` ou `!clc max`"
+        help="Limpa mensagens.\nUso: `!clc <num>` ou `!clc user @utilizador <num>`"
     )
-    @commands.has_permissions(manage_messages=True)
+    @commands.has_permissions(administrator=True)
     async def clc(self, ctx, *args):
-        MAX_TEMPO = 14  # 14 dias
+        if len(args) == 1:
+            # === !clc <num> ===
+            if not args[0].isdigit():
+                return await ctx.send("❌ Indica um número válido. Ex: `!clc 10`")
+            quantidade = int(args[0])
+            if not 0 < quantidade <= 100:
+                return await ctx.send("❌ Número deve estar entre 1 e 100.")
 
-        # Tratar o caso !clc max
-        if len(args) == 1 and args[0].lower() == "max":
-            tempo = MAX_TEMPO
-            label = "14 dias"
-        # Tratar o caso !clc <número> <h|d>
-        elif len(args) == 2:
-            quantidade, unidade = args[0], args[1].lower()
+            await ctx.message.delete()
+            apagadas = await ctx.channel.purge(limit=quantidade)
+            confirm = await ctx.send(f"🧹 Apagadas {len(apagadas)} mensagens.")
+            await confirm.delete(delay=5)
 
+        elif len(args) == 3 and args[0].lower() == "user":
+            # === !clc user @user <num> ===
+            user_input, quantidade = args[1], args[2]
             if not quantidade.isdigit():
-                return await ctx.send("❌ A quantidade deve ser um número.")
+                return await ctx.send("❌ Usa: `!clc user @utilizador <num>`")
             quantidade = int(quantidade)
+            if not 0 < quantidade <= 100:
+                return await ctx.send("❌ Número deve estar entre 1 e 100.")
 
-            if unidade == "h":
-                tempo = quantidade  # Tempo em horas
-                label = f"{quantidade} hora(s)"
-            elif unidade == "d":
-                tempo = quantidade * 24  # Converter dias para horas
-                label = f"{quantidade} dia(s)"
+            membro = None
+
+            # Se for uma menção
+            if ctx.message.mentions:
+                membro = ctx.message.mentions[0]
+            elif user_input.isdigit():
+                # Procurar por ID globalmente, mesmo que o utilizador não esteja no servidor
+                membro = self.bot.get_user(int(user_input))  # Usando bot.get_user() para procurar globalmente
             else:
-                return await ctx.send("❌ Unidade inválida. Usa `h` (horas) ou `d` (dias).")
+                # Tentar encontrar por nome exato (verificando também o ID se for ambiguo)
+                membro = discord.utils.find(
+                    lambda m: m.name.lower() == user_input.lower() or m.display_name.lower() == user_input.lower() or str(m.id) == user_input,
+                    ctx.guild.members
+                )
+
+            if not membro:
+                return await ctx.send(f"❌ Utilizador `{user_input}` não encontrado no servidor ou globalmente.")
+
+            await ctx.message.delete()
+
+            # Buscar mensagens
+            mensagens = []
+            async for msg in ctx.channel.history(limit=100):
+                if msg.author == membro:
+                    mensagens.append(msg)
+                if len(mensagens) >= quantidade:
+                    break
+
+            if mensagens:
+                await ctx.channel.delete_messages(mensagens)
+                confirm = await ctx.send(f"🧹 Apagadas {len(mensagens)} mensagens de {membro.display_name}.")
+                await confirm.delete(delay=5)
+            else:
+                await ctx.send(f"ℹ️ Nenhuma mensagem recente de {membro.display_name} encontrada.")
+
         else:
-            return await ctx.send("❌ Uso inválido. Ex: `!clc 10 h`, `!clc 2 d`, `!clc max`")
+            await ctx.send("❌ Uso incorreto. Exemplos:\n`!clc 10`\n`!clc user @Alex 5`")
 
-        if tempo <= 0:
-            return await ctx.send("❌ A quantidade de tempo deve ser maior que 0.")
-        if tempo > MAX_TEMPO * 24:
-            return await ctx.send(f"❌ Só posso apagar mensagens com menos de 14 dias ({MAX_TEMPO} dias).")
-
-        # Apagar a mensagem de comando
-        await ctx.message.delete()
-
-        # Calcular o limite de tempo
-        agora = datetime.utcnow()
-        limite_tempo = agora - timedelta(hours=tempo)
-
-        # Purge
-        apagadas = await ctx.channel.purge(after=limite_tempo)
-
-        # Confirmação temporária
-        confirm = await ctx.send(f"🧹 Apagadas {len(apagadas)} mensagens dos últimos {label}.")
-        await confirm.delete(delay=5)
+    @clc.error
+    async def clc_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ Precisas de **permissão de administrador** para isso.")
 
 async def setup(bot):
     await bot.add_cog(Limpar(bot))
