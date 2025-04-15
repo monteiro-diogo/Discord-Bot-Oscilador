@@ -1,5 +1,3 @@
-# comandos/reactionrole.py
-
 import discord
 from discord.ext import commands
 import asyncio
@@ -19,68 +17,75 @@ class ReactionRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # === Comando de configurar reaction role ===
-    @commands.command(name="rr", help="`<link> <emoji> <role> <true or false>` - ``Dá um role de acordo com uma reação criada``")
+    # Comando para configurar reaction role
+    @commands.command(
+        name="rr",
+        aliases=["reactionrole"],
+        help="Configura um role baseado em uma reação a uma mensagem.\nUso: `!rr <link> <emoji> <role> <true or false>`"
+    )
     @commands.has_permissions(administrator=True)
     async def rr(self, ctx, message_link, emoji, role: discord.Role, exclusive: bool):
-        parts = message_link.split('/')
-        guild_id = int(parts[-3])
-        channel_id = int(parts[-2])
-        message_id = int(parts[-1])
-
-        channel = self.bot.get_channel(channel_id)
-        message = await channel.fetch_message(message_id)
-
-        if not message.channel.permissions_for(ctx.guild.me).add_reactions:
-            return await ctx.send("❌ Não tenho permissão para adicionar reações nessa mensagem.")
-        if not ctx.guild.me.guild_permissions.manage_roles:
-            return await ctx.send("❌ Não tenho permissão para gerenciar cargos.")
-
-        preview = (
-            f"**Prévia de configuração:**\n"
-            f"Mensagem: [Link]({message_link}) "
-            f"Emoji: {emoji} "
-            f"Role: {role.mention} "
-            f"Exclusivo: {'Sim' if exclusive else 'Não'}\n\n"
-            f"✅ Para confirmar ou ❌ Para cancelar."
-        )
-        preview_message = await ctx.send(preview)
-
-        await preview_message.add_reaction("✅")
-        await preview_message.add_reaction("❌")
-
-        def check(reaction, user):
-            return (
-                user == ctx.author and
-                reaction.message.id == preview_message.id and
-                str(reaction.emoji) in ["✅", "❌"]
-            )
-
         try:
+            # Extrair IDs da URL
+            parts = message_link.split('/')
+            guild_id = int(parts[-3])
+            channel_id = int(parts[-2])
+            message_id = int(parts[-1])
+
+            # Obter a mensagem
+            channel = self.bot.get_channel(channel_id)
+            message = await channel.fetch_message(message_id)
+
+            # Verificar permissões
+            if not message.channel.permissions_for(ctx.guild.me).add_reactions:
+                return await ctx.send("❌ Não tenho permissão para adicionar reações nessa mensagem.")
+            if not ctx.guild.me.guild_permissions.manage_roles:
+                return await ctx.send("❌ Não tenho permissão para gerenciar cargos.")
+
+            # Mostrar pré-visualização
+            preview = (
+                f"**Prévia de configuração:**\n"
+                f"Mensagem: [Link]({message_link})\n"
+                f"Emoji: {emoji}\n"
+                f"Role: {role.mention}\n"
+                f"Exclusivo: {'Sim' if exclusive else 'Não'}\n\n"
+                f"✅ Para confirmar ou ❌ Para cancelar."
+            )
+            preview_message = await ctx.send(preview)
+            await preview_message.add_reaction("✅")
+            await preview_message.add_reaction("❌")
+
+            # Esperar pela reação
+            def check(reaction, user):
+                return user == ctx.author and reaction.message.id == preview_message.id and str(reaction.emoji) in ["✅", "❌"]
+
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
-        except asyncio.TimeoutError:
-            await ctx.send("⏰ Tempo de confirmação esgotado. Cancelei a configuração.")
-            return
 
-        if str(reaction.emoji) == "❌":
-            await ctx.send("❌ Configuração cancelada.")
-            return
+            if str(reaction.emoji) == "❌":
+                await ctx.send("❌ Configuração cancelada.")
+                return
 
-        await message.add_reaction(emoji)
+            # Adicionar a reação
+            await message.add_reaction(emoji)
 
-        if str(message_id) not in reaction_roles:
-            reaction_roles[str(message_id)] = {}
-        reaction_roles[str(message_id)][emoji] = {
-            "role_id": role.id,
-            "exclusive": exclusive
-        }
+            # Armazenar a configuração
+            if str(message_id) not in reaction_roles:
+                reaction_roles[str(message_id)] = {}
+            reaction_roles[str(message_id)][emoji] = {
+                "role_id": role.id,
+                "exclusive": exclusive
+            }
 
-        with open(DATA_FILE, "w") as f:
-            json.dump(reaction_roles, f, indent=4)
+            # Salvar a configuração
+            with open(DATA_FILE, "w") as f:
+                json.dump(reaction_roles, f, indent=4)
 
-        await ctx.send(f"✅ Configuração feita para reação {emoji} com role {role.name}")
+            await ctx.send(f"✅ Configuração feita para reação {emoji} com role {role.name}")
 
-    # === Evento para adicionar role ===
+        except Exception as e:
+            await ctx.send(f"❌ Ocorreu um erro: {str(e)}")
+
+    # Evento para adicionar role com a reação
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.bot.user.id:
@@ -116,7 +121,7 @@ class ReactionRole(commands.Cog):
 
         await user.add_roles(role)
 
-    # === Evento para remover role ===
+    # Evento para remover role com a reação
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
         guild = self.bot.get_guild(payload.guild_id)
@@ -136,7 +141,6 @@ class ReactionRole(commands.Cog):
         if role:
             await user.remove_roles(role)
 
-# Setup para o bot carregar o cog
+# Setup para carregar o cog
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))
-
