@@ -20,8 +20,11 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 # === Evento de inicialização ===
 @bot.event
 async def on_ready():
-    print(f'Bot ativo como {bot.user}')
-    print(bot.commands)
+    print(f'Bot {bot.user} está online!')
+    
+    # Definir o status do bot
+    activity = discord.Game(name="Forex")
+    await bot.change_presence(activity=activity)
 
 @bot.event
 async def setup_hook():
