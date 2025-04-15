@@ -3,10 +3,12 @@ from discord.ext import commands
 import asyncio
 import json
 import os
+import time
+from collections import defaultdict
 
 DATA_FILE = "reaction_roles.json"
 
-# Carregar as configurações
+# Carrega os dados
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         reaction_roles = json.load(f)
@@ -16,131 +18,112 @@ else:
 class ReactionRole(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.pending_updates = defaultdict(dict)  # user_id -> {guild_id, roles, timestamp}
+        self.update_delay = 0.2  # segundos entre atualizações (reduzido para melhorar a velocidade)
+        self.loop_task = self.bot.loop.create_task(self._role_update_loop())
 
-    # Comando para configurar reaction role
-    @commands.command(
-        name="rr",
-        aliases=["reactionrole"],
-        help="Configura um role baseado em uma reação a uma mensagem.\nUso: `!rr <link> <emoji> <role> <true or false>`"
-    )
-    @commands.has_permissions(administrator=True)
-    async def rr(self, ctx, message_link, emoji, role: discord.Role, exclusive: bool):
-        try:
-            # Extrair IDs da URL
-            parts = message_link.split('/')
-            guild_id = int(parts[-3])
-            channel_id = int(parts[-2])
-            message_id = int(parts[-1])
+    async def _role_update_loop(self):
+        while True:
+            now = time.time()
+            to_process = []
 
-            # Obter a mensagem
-            channel = self.bot.get_channel(channel_id)
-            message = await channel.fetch_message(message_id)
+            # Processa os usuários que já passaram do tempo de espera
+            for user_id, data in list(self.pending_updates.items()):
+                if now - data["timestamp"] >= self.update_delay:
+                    to_process.append((user_id, data))
+                    del self.pending_updates[user_id]
 
-            # Verificar permissões
-            if not message.channel.permissions_for(ctx.guild.me).add_reactions:
-                return await ctx.send("❌ Não tenho permissão para adicionar reações nessa mensagem.")
-            if not ctx.guild.me.guild_permissions.manage_roles:
-                return await ctx.send("❌ Não tenho permissão para gerenciar cargos.")
+            # Atualiza os membros
+            for user_id, data in to_process:
+                guild = self.bot.get_guild(data["guild_id"])
+                member = guild.get_member(user_id)
+                if member and not member.bot:
+                    # Verifica se as roles já estão corretas
+                    if member.roles != data["roles"]:
+                        await member.edit(roles=data["roles"])
 
-            # Mostrar pré-visualização
-            preview = (
-                f"**Prévia de configuração:**\n"
-                f"Mensagem: [Link]({message_link})\n"
-                f"Emoji: {emoji}\n"
-                f"Role: {role.mention}\n"
-                f"Exclusivo: {'Sim' if exclusive else 'Não'}\n\n"
-                f"✅ Para confirmar ou ❌ Para cancelar."
-            )
-            preview_message = await ctx.send(preview)
-            await preview_message.add_reaction("✅")
-            await preview_message.add_reaction("❌")
+            await asyncio.sleep(0.2)
 
-            # Esperar pela reação
-            def check(reaction, user):
-                return user == ctx.author and reaction.message.id == preview_message.id and str(reaction.emoji) in ["✅", "❌"]
-
-            reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
-
-            if str(reaction.emoji) == "❌":
-                await ctx.send("❌ Configuração cancelada.")
-                return
-
-            # Adicionar a reação
-            await message.add_reaction(emoji)
-
-            # Armazenar a configuração
-            if str(message_id) not in reaction_roles:
-                reaction_roles[str(message_id)] = {}
-            reaction_roles[str(message_id)][emoji] = {
-                "role_id": role.id,
-                "exclusive": exclusive
-            }
-
-            # Salvar a configuração
-            with open(DATA_FILE, "w") as f:
-                json.dump(reaction_roles, f, indent=4)
-
-            await ctx.send(f"✅ Configuração feita para reação {emoji} com role {role.name}")
-
-        except Exception as e:
-            await ctx.send(f"❌ Ocorreu um erro: {str(e)}")
-
-    # Evento para adicionar role com a reação
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.bot.user.id:
             return
 
-        user = payload.member
-        if not user:
-            guild = self.bot.get_guild(payload.guild_id)
-            user = guild.get_member(payload.user_id)
-        if not user or user.bot:
-            return
-
-        data = reaction_roles.get(str(payload.message_id))
+        msg_id = str(payload.message_id)
+        data = reaction_roles.get(msg_id)
         if not data:
             return
 
         emoji = str(payload.emoji)
-        if emoji not in data:
+        config = data.get(emoji)
+        if not config:
             return
 
         guild = self.bot.get_guild(payload.guild_id)
-        role = guild.get_role(data[emoji]["role_id"])
-        exclusive = data[emoji]["exclusive"]
+        member = payload.member or guild.get_member(payload.user_id)
+        if not member or member.bot:
+            return
 
-        if exclusive:
-            message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
-            for other_emoji in data:
-                if other_emoji != emoji:
-                    await message.remove_reaction(other_emoji, user)
-                    other_role = guild.get_role(data[other_emoji]["role_id"])
-                    if other_role:
-                        await user.remove_roles(other_role)
+        new_roles = [role for role in member.roles]  # Evita a cópia completa da lista de roles
+        target_role = guild.get_role(config["role_id"])
+        if not target_role:
+            return
 
-        await user.add_roles(role)
+        # Exclusivo: Remove outras roles associadas a outros emojis
+        if config["exclusive"]:
+            for other_emoji, other_cfg in data.items():
+                other_role = guild.get_role(other_cfg["role_id"])
+                if other_role and other_role in new_roles:
+                    new_roles.remove(other_role)
 
-    # Evento para remover role com a reação
+        if target_role not in new_roles:
+            new_roles.append(target_role)
+
+        # Registra a atualização apenas se as roles mudaram
+        if set(new_roles) != set(member.roles):
+            self.pending_updates[member.id] = {
+                "guild_id": guild.id,
+                "roles": new_roles,
+                "timestamp": time.time()
+            }
+
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
-        guild = self.bot.get_guild(payload.guild_id)
-        user = guild.get_member(payload.user_id)
-        if not user:
+        if payload.user_id == self.bot.user.id:
             return
 
-        data = reaction_roles.get(str(payload.message_id))
+        msg_id = str(payload.message_id)
+        data = reaction_roles.get(msg_id)
         if not data:
             return
 
         emoji = str(payload.emoji)
-        if emoji not in data:
+        config = data.get(emoji)
+        if not config:
             return
 
-        role = guild.get_role(data[emoji]["role_id"])
-        if role:
-            await user.remove_roles(role)
+        guild = self.bot.get_guild(payload.guild_id)
+        member = guild.get_member(payload.user_id)
+        if not member or member.bot:
+            return
 
-# Setup para carregar o cog
+        new_roles = [role for role in member.roles]  # Evita a cópia completa da lista de roles
+        target_role = guild.get_role(config["role_id"])
+        if not target_role:
+            return
+
+        # Remove a role associada à reação removida
+        if target_role in new_roles:
+            new_roles.remove(target_role)
+
+        # Registra a atualização apenas se as roles mudaram
+        if set(new_roles) != set(member.roles):
+            self.pending_updates[member.id] = {
+                "guild_id": guild.id,
+                "roles": new_roles,
+                "timestamp": time.time()
+            }
+
+# Função obrigatória para carregar o cog
 async def setup(bot):
     await bot.add_cog(ReactionRole(bot))
