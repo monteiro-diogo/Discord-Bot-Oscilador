@@ -22,7 +22,7 @@ class Limpar(commands.Cog):
 
             await ctx.message.delete()
             apagadas = await ctx.channel.purge(limit=quantidade)
-            confirm = await ctx.send(f"🧹 Apagadas {len(apagadas)} mensagens.")
+            confirm = await ctx.send(f"🧹 Apaguei {len(apagadas)} mensagens.")
             await confirm.delete(delay=5)
 
         elif len(args) == 3 and args[0].lower() == "user":
