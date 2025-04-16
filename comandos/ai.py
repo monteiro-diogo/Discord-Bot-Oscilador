@@ -1,68 +1,56 @@
 import discord
 from discord.ext import commands
+import requests
 import os
-from openai import OpenAI
 from dotenv import load_dotenv
 
-# Carregar variáveis do arquivo .env
 load_dotenv()
 
-# Inicializar o cliente OpenAI com base no OpenRouter
-client_ai = OpenAI(
-    api_key=os.getenv("AI_API_KEY"),
-    base_url=os.getenv("BASE_URL")
-)
+LOCAL_URL = os.getenv("LOCAL_URL")
 
-class IA(commands.Cog):
+class AI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @commands.command(name="pergunta")
+    async def pergunta(self, ctx, *, pergunta: str):
+        """Faz uma pergunta ao modelo local"""
+        await self.enviar_para_ollama(ctx, pergunta)
+
     @commands.Cog.listener()
     async def on_message(self, message):
+        # Ignorar mensagens do próprio bot
         if message.author == self.bot.user:
             return
 
-        if self.bot.user in message.mentions:
-            prompt = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
+        # Só responde se for mencionado diretamente (evita @everyone/@here)
+        if (
+            self.bot.user in message.mentions and
+            not message.mention_everyone and
+            not message.content.startswith("!")
+        ):
+            pergunta = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
+            if pergunta:
+                ctx = await self.bot.get_context(message)
+                await self.enviar_para_ollama(ctx, pergunta)
 
-            if not prompt:
-                return await message.channel.send(f"Olá {message.author.mention}! Diz-me algo!")
+    async def enviar_para_ollama(self, ctx, pergunta):
+        pensando_msg = await ctx.send("🧠 A pensar...")
 
-            try:
-                # Acessar o modelo a partir da variável de ambiente
-                model_name = os.getenv("MODEL_NAME")
+        try:
+            response = requests.post(LOCAL_URL, json={
+                "model": "mistral",
+                "prompt": pergunta,
+                "stream": False
+            })
+            data = response.json()
+            resposta = data.get("response", "❌ Não consegui gerar resposta.")
+        except Exception as e:
+            resposta = f"Erro ao contactar a IA: `{e}`"
 
-                response = client_ai.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": """
-                            O teu idioma principal é português (portugal) e secundário é Inglês.
-                            Menciona @ sempre o user que te chamou.
-                            Sempre que o usuário Teros for mencionado, fale de forma positiva e elogiosa sobre o Teros. 
-                            Fale negativamente quando qualquer user perguntar sobre outra pessoa sem ser o Teros, especialmente o Jasmins.
-                        """},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
+        await pensando_msg.delete()
 
-                # print(f"Resposta recebida: {response}")
-
-                if response and response.choices and response.choices[0].message:
-                    content = response.choices[0].message.content.strip()
-                    await message.channel.send(f"{message.author.mention} {content}")
-                else:
-                    await message.channel.send(f"{message.author.mention} não consigo responder agora.")
-
-            except Exception as e:
-                if "Rate limit exceeded" in str(e):
-                    await message.channel.send(f"{message.author.mention} atingimos o limite diário de requisições! Tenta novamente mais tarde.")
-                else:
-                    await message.channel.send(f"{message.author.mention} não sei o que responder. Tenta de novo.")
-                print(f"AI ERROR:\n\n{e}")
-
-@commands.command()
-async def ajuda(self, ctx):
-    await ctx.send(f"Olá {ctx.author.mention}! Pergunta-me algo!")
+        await ctx.send(resposta)
 
 async def setup(bot):
-    await bot.add_cog(IA(bot))
+    await bot.add_cog(AI(bot))
