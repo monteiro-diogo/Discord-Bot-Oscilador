@@ -1,7 +1,8 @@
-.env
-reaction_roles.json
-__pycache__/
+*.env
+*.json
 *.pyc
-.DS_Store
-Thumbs.db
-comandos/friend_memes.py
+*.DS_Store
+*.db
+old/
+__pycache__/
+prompts/
