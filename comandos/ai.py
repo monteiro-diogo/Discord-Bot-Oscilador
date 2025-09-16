@@ -65,7 +65,7 @@ class AI(commands.Cog):
 
     async def enviar_para_ollama(self, ctx, pergunta, autor_mention):
         if not pergunta:
-            return await ctx.send(f"{autor_mention} ❌ ERRO: Nenhuma pergunta detectada.")
+            return await ctx.send(f"Olá {autor_mention}! Tudo ok?")
 
         pensando = await ctx.send("🧠 A pensar...")
 
@@ -78,21 +78,18 @@ class AI(commands.Cog):
             "stream":      STREAM
         }
 
-        # DEBUG
-        # print(">>> Payload enviado:", json.dumps(payload, ensure_ascii=False, indent=2))
-
         try:
             resp = requests.post(LOCAL_URL, json=payload, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            resposta = data.get("response", "❌ ERRO: Não consegui gerar uma resposta.")
+            resposta = data.get("response", "Não sei responder.")
         except Exception as e:
             resposta = f"Erro ao contactar a AI: `{e}`"
 
         await pensando.delete()
 
         if len(resposta) > 2000:
-            resposta = "❌ A resposta é demasiado longa para ser enviada aqui. Tente formular uma pergunta mais objetiva ou divida o pedido em partes."
+            resposta = "Há tanto para dizer que nem consigo responder. Tenta formular uma pergunta mais objetiva."
 
 
         await ctx.send(f"{resposta}\n||{autor_mention}||")
