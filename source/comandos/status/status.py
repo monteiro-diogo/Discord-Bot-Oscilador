@@ -3,7 +3,10 @@ from discord.ext import commands
 import json
 import os
 
-STATUS_PATH = "status.json"
+# Guardar o path do ficheiro `status.json` na mesma pasta deste módulo. Isto
+# permite que o ficheiro fique em `comandos/status/status.json` em vez da raiz
+# do projecto. (Evita dependência do working directory atual.)
+STATUS_PATH = os.path.join(os.path.dirname(__file__), "status.json")
 
 
 def guardar_status(tipo, texto):
@@ -35,7 +38,7 @@ class Status(commands.Cog):
     @commands.is_owner()
     async def status(self, ctx, tipo: str = None, *, texto: str = None):
         """
-        Atualiza o status do bot em tempo real e grava no status.json.
+        Atualiza o status do bot em tempo real.
         Uso:
           !status playing Minecraft
           !status listening Lofi beats
@@ -44,7 +47,7 @@ class Status(commands.Cog):
           !status -> mostra o atual
         """
 
-        # Mostrar o status atual
+        # DEBUGG: Mostrar o status atual
         if not tipo and not texto:
             if not os.path.exists(STATUS_PATH):
                 await ctx.send("⚠️ Ficheiro status.json não encontrado.")
