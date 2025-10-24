@@ -5,4 +5,3 @@
 *.db
 old/
 __pycache__/
-prompts/

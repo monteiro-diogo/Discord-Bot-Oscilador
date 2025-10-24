@@ -13,7 +13,8 @@ if not LOCAL_URL:
 
 # Carregar prompt e parâmetros do ficheiro externo
 try:
-    with open("prompt.json", encoding="utf-8") as f:
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt.json")
+    with open(cfg_path, encoding="utf-8") as f:
         cfg = json.load(f)
 except Exception as e:
     raise RuntimeError(f"❌ Erro ao carregar prompt.json: {e}")
