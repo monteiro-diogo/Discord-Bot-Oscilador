@@ -1,4 +1,5 @@
-# Testing 
+# This script creates a simple Discord bot command that responds with "Pong!" when a user types "!ping".
+# The only use is for bot testing purposes.
 import discord
 from discord.ext import commands
 

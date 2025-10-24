@@ -83,7 +83,7 @@ class AI(commands.Cog):
             resp = requests.post(LOCAL_URL, json=payload, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            resposta = data.get("response", "Não sei responder.")
+            resposta = data.get("response", "Não sei o que responder.")
         except Exception as e:
             resposta = f"Erro ao contactar a AI: `{e}`"
 

@@ -17,8 +17,8 @@ class Limpar(commands.Cog):
             if not args[0].isdigit():
                 return await ctx.send("❌ Indica um número válido. Ex: `!clc 10`")
             quantidade = int(args[0])
-            if not 0 < quantidade <= 100:
-                return await ctx.send("❌ Número deve estar entre 1 e 100.")
+            if not 0 < quantidade <= 20:
+                return await ctx.send("❌ O número deve estar entre 1 e 20.")
 
             await ctx.message.delete()
             apagadas = await ctx.channel.purge(limit=quantidade)
@@ -40,8 +40,14 @@ class Limpar(commands.Cog):
             if ctx.message.mentions:
                 membro = ctx.message.mentions[0]
             elif user_input.isdigit():
-                # Procurar por ID globalmente, mesmo que o utilizador não esteja no servidor
-                membro = self.bot.get_user(int(user_input))  # Usando bot.get_user() para procurar globalmente
+                # Procurar por ID: preferir membro do servidor, caso contrário tentar buscar globalmente via API
+                user_id = int(user_input)
+                membro = ctx.guild.get_member(user_id)
+                if not membro:
+                    try:
+                        membro = await self.bot.fetch_user(user_id)
+                    except Exception:
+                        membro = None
             else:
                 # Tentar encontrar por nome exato (verificando também o ID se for ambiguo)
                 membro = discord.utils.find(
@@ -64,7 +70,8 @@ class Limpar(commands.Cog):
 
             if mensagens:
                 await ctx.channel.delete_messages(mensagens)
-                confirm = await ctx.send(f"🧹 Apagadas {len(mensagens)} mensagens de {membro.display_name}.")
+                display_name = getattr(membro, 'display_name', None) or getattr(membro, 'name', str(membro))
+                confirm = await ctx.send(f"🧹 Apagadas {len(mensagens)} mensagens de {display_name}.")
                 await confirm.delete(delay=5)
             else:
                 await ctx.send(f"ℹ️ Nenhuma mensagem recente de {membro.display_name} encontrada.")
